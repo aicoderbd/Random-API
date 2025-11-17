@@ -15,8 +15,8 @@ enabled = true
 head_sampling_rate = 1
 
 # Performance limits
-[limits]
-cpu_ms = 50
+#[limits]
+#cpu_ms = 50
 
 # Smart placement for optimal performance
 [placement]
