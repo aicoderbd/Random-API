@@ -457,9 +457,6 @@ class RateLimiter {
 
 const rateLimiter = new RateLimiter();
 
-// Cleanup old entries every 5 minutes
-setInterval(() => rateLimiter.cleanup(), 5 * 60 * 1000);
-
 // ============================================================================
 // MIDDLEWARE
 // ============================================================================
@@ -469,6 +466,9 @@ const rateLimitMiddleware = async (c: any, next: any) => {
     c.req.header('cf-connecting-ip') ||
     c.req.header('x-forwarded-for') ||
     'unknown';
+
+  // Cleanup old entries per request (cheap and Worker-safe)
+  rateLimiter.cleanup();
 
   if (!rateLimiter.check(identifier)) {
     return c.json(
@@ -648,6 +648,7 @@ app.get('/health', (c) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: API_VERSION,
+    // In Workers, process may not exist, so guard it
     uptime: (globalThis as any).process?.uptime?.() || 'N/A',
   });
 });
