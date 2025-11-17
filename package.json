@@ -1,5 +1,5 @@
 {
-  "name": "random-api",
+  "name": "random",
   "version": "2.0.0",
   "description": "Production-ready random address generator API with 70+ locales support",
   "main": "src/index.ts",
@@ -35,7 +35,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/address-generator-api"
+    "url": "https://github.com/aicoderbd/Random-API"
   },
   "dependencies": {
     "@faker-js/faker": "^8.4.1",
