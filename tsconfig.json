@@ -1,12 +1,12 @@
 {
   "compilerOptions": {
     /* Language and Environment */
-    "target": "ES2024",
-    "lib": ["ES2024"],
+    "target": "ES2022",
+    "lib": ["ES2022", "WebWorker"],
     "jsx": "react-jsx",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    
+
     /* Modules */
     "module": "ES2022",
     "moduleResolution": "bundler",
@@ -16,29 +16,25 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    
+
     /* JavaScript Support */
     "allowJs": true,
     "checkJs": false,
-    
+
     /* Emit */
-    "declaration": true,
-    "declarationMap": true,
     "sourceMap": true,
-    "outDir": "./dist",
-    "removeComments": true,
-    "noEmit": true,
+    "noEmit": true,             // Wrangler / bundler handles emit
     "importHelpers": false,
     "downlevelIteration": true,
     "newLine": "lf",
-    
+
     /* Interop Constraints */
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    
+
     /* Type Checking - Strict Mode */
     "strict": true,
     "noImplicitAny": true,
@@ -49,7 +45,7 @@
     "noImplicitThis": true,
     "useUnknownInCatchVariables": true,
     "alwaysStrict": true,
-    
+
     /* Type Checking - Additional Checks */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -61,22 +57,21 @@
     "noPropertyAccessFromIndexSignature": false,
     "allowUnusedLabels": false,
     "allowUnreachableCode": false,
-    
+
     /* Completeness */
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
-    
+
     /* Advanced Options */
     "types": [
       "@cloudflare/workers-types/2023-07-01",
-      "@types/node",
       "vitest/globals"
     ],
-    
+
     /* Build Performance */
     "incremental": true,
     "tsBuildInfoFile": ".tsbuildinfo",
-    
+
     /* Interop */
     "preserveSymlinks": true
   },
