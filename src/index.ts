@@ -15,13 +15,6 @@ type SupportedLocale = keyof typeof allFakers;
 
 type OutputFormat = 'json' | 'xml' | 'csv' | 'yaml' | 'plain';
 
-interface AddressQuery {
-  locale?: SupportedLocale;
-  count?: number;
-  seed?: number;
-  format?: OutputFormat;
-}
-
 interface FullAddress {
   id: string;
   street: string;
@@ -130,10 +123,6 @@ interface ApiResponse<T> {
   };
 }
 
-interface RateLimitStore {
-  requests: Map<string, { count: number; resetTime: number }>;
-}
-
 // ============================================================================
 // UTILITIES
 // ============================================================================
@@ -161,10 +150,13 @@ const setSeed = (fakerInstance: Faker, seed?: number) => {
 };
 
 const generateFullAddress = (fakerInstance: Faker): FullAddress => {
-  const lat = parseFloat(fakerInstance.location.latitude());
-  const lng = parseFloat(fakerInstance.location.longitude());
+  const rawLat = fakerInstance.location.latitude();
+  const rawLng = fakerInstance.location.longitude();
+  const lat = parseFloat(rawLat);
+  const lng = parseFloat(rawLng);
   const state = fakerInstance.location.state();
-  
+  const locationAny = fakerInstance.location as any;
+
   return {
     id: fakerInstance.string.uuid(),
     street: fakerInstance.location.street(),
@@ -172,16 +164,18 @@ const generateFullAddress = (fakerInstance: Faker): FullAddress => {
     streetAddress: fakerInstance.location.streetAddress(),
     secondaryAddress: fakerInstance.location.secondaryAddress(),
     city: fakerInstance.location.city(),
-    cityPrefix: fakerInstance.location.cityPrefix?.() || '',
-    citySuffix: fakerInstance.location.citySuffix?.() || '',
+    // Some faker builds don't expose these in the type definition:
+    cityPrefix: locationAny.cityPrefix?.() ?? '',
+    citySuffix: locationAny.citySuffix?.() ?? '',
     state: state,
     stateAbbr: fakerInstance.location.state({ abbreviated: true }),
     zipCode: fakerInstance.location.zipCode(),
     zipCodeByState: fakerInstance.location.zipCode(),
     country: fakerInstance.location.country(),
     countryCode: fakerInstance.location.countryCode(),
-    latitude: fakerInstance.location.latitude(),
-    longitude: fakerInstance.location.longitude(),
+    // keep as strings, as defined in FullAddress
+    latitude: rawLat,
+    longitude: rawLng,
     timeZone: fakerInstance.location.timeZone(),
     buildingNumber: fakerInstance.location.buildingNumber(),
     cardinalDirection: fakerInstance.location.cardinalDirection(),
@@ -189,7 +183,8 @@ const generateFullAddress = (fakerInstance: Faker): FullAddress => {
     direction: fakerInstance.location.direction(),
     county: fakerInstance.location.county?.() || '',
     nearbyGPSCoordinate: fakerInstance.location.nearbyGPSCoordinate({
-      origin: [lat, lng],
+      // typings usually expect [string, string]
+      origin: [rawLat, rawLng],
     }) as [number, number],
     coordinates: { lat, lng },
   };
@@ -201,7 +196,7 @@ const generatePersonWithAddress = (fakerInstance: Faker): PersonWithAddress => {
   const sex = fakerInstance.person.sex();
   const dob = fakerInstance.date.birthdate();
   const age = new Date().getFullYear() - dob.getFullYear();
-  
+
   return {
     person: {
       id: fakerInstance.string.uuid(),
@@ -231,7 +226,8 @@ const generatePersonWithAddress = (fakerInstance: Faker): PersonWithAddress => {
       bs: fakerInstance.company.buzzPhrase(),
     },
     internet: {
-      username: fakerInstance.internet.username({ firstName, lastName }),
+      // Correct faker API is userName, not username
+      username: fakerInstance.internet.userName({ firstName, lastName }),
       email: fakerInstance.internet.email({ firstName, lastName }),
       password: fakerInstance.internet.password(),
       emoji: fakerInstance.internet.emoji(),
@@ -278,25 +274,39 @@ const convertToXML = (data: any, rootElement = 'response'): string => {
     for (const key in obj) {
       const value = obj[key];
       if (Array.isArray(value)) {
-        value.forEach(item => {
-          xml += `${indent}<${key}>${typeof item === 'object' ? '\n' + toXML(item, indent + '  ') + indent : item}</${key}>\n`;
+        value.forEach((item) => {
+          xml += `${indent}<${key}>${
+            typeof item === 'object'
+              ? '\n' + toXML(item, indent + '  ') + indent
+              : item
+          }</${key}>\n`;
         });
       } else if (typeof value === 'object' && value !== null) {
-        xml += `${indent}<${key}>\n${toXML(value, indent + '  ')}${indent}</${key}>\n`;
+        xml += `${indent}<${key}>\n${toXML(
+          value,
+          indent + '  '
+        )}${indent}</${key}>\n`;
       } else {
         xml += `${indent}<${key}>${value}</${key}>\n`;
       }
     }
     return xml;
   };
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<${rootElement}>\n${toXML(data, '  ')}</${rootElement}>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<${rootElement}>\n${toXML(
+    data,
+    '  '
+  )}</${rootElement}>`;
 };
 
 const convertToCSV = (data: any): string => {
   const flatten = (obj: any, prefix = ''): any => {
     return Object.keys(obj).reduce((acc: any, key) => {
       const pre = prefix.length ? `${prefix}_` : '';
-      if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+      if (
+        typeof obj[key] === 'object' &&
+        obj[key] !== null &&
+        !Array.isArray(obj[key])
+      ) {
         Object.assign(acc, flatten(obj[key], pre + key));
       } else {
         acc[pre + key] = obj[key];
@@ -306,31 +316,38 @@ const convertToCSV = (data: any): string => {
   };
 
   const items = Array.isArray(data) ? data : [data];
-  const flatItems = items.map(item => flatten(item));
+  const flatItems = items.map((item) => flatten(item));
   const headers = Object.keys(flatItems[0] || {});
-  
+
   const csvRows = [
     headers.join(','),
-    ...flatItems.map(item => 
-      headers.map(header => {
-        const value = item[header];
-        return typeof value === 'string' && value.includes(',') 
-          ? `"${value}"` 
-          : value;
-      }).join(',')
+    ...flatItems.map((item) =>
+      headers
+        .map((header) => {
+          const value = item[header];
+          return typeof value === 'string' && value.includes(',')
+            ? `"${value}"`
+            : value;
+        })
+        .join(',')
     ),
   ];
-  
+
   return csvRows.join('\n');
 };
 
 const convertToYAML = (data: any, indent = 0): string => {
   const spaces = '  '.repeat(indent);
-  
+
   if (Array.isArray(data)) {
-    return data.map(item => `${spaces}- ${convertToYAML(item, indent + 1).trimStart()}`).join('\n');
+    return data
+      .map(
+        (item) =>
+          `${spaces}- ${convertToYAML(item, indent + 1).trimStart()}`
+      )
+      .join('\n');
   }
-  
+
   if (typeof data === 'object' && data !== null) {
     return Object.entries(data)
       .map(([key, value]) => {
@@ -341,7 +358,7 @@ const convertToYAML = (data: any, indent = 0): string => {
       })
       .join('\n');
   }
-  
+
   return `${spaces}${data}`;
 };
 
@@ -349,9 +366,13 @@ const convertToPlain = (data: any): string => {
   const stringify = (obj: any, indent = 0): string => {
     const spaces = '  '.repeat(indent);
     let result = '';
-    
+
     for (const [key, value] of Object.entries(obj)) {
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      if (
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value)
+      ) {
         result += `${spaces}${key}:\n${stringify(value, indent + 1)}`;
       } else if (Array.isArray(value)) {
         result += `${spaces}${key}: [${value.join(', ')}]\n`;
@@ -361,13 +382,19 @@ const convertToPlain = (data: any): string => {
     }
     return result;
   };
-  
-  return Array.isArray(data) 
-    ? data.map((item, i) => `--- Item ${i + 1} ---\n${stringify(item)}`).join('\n')
+
+  return Array.isArray(data)
+    ? data
+        .map((item, i) => `--- Item ${i + 1} ---\n${stringify(item)}`)
+        .join('\n')
     : stringify(data);
 };
 
-const formatResponse = (data: any, format: OutputFormat, contentType: { type: string }): string => {
+const formatResponse = (
+  data: any,
+  format: OutputFormat,
+  contentType: { type: string }
+): string => {
   switch (format) {
     case 'xml':
       contentType.type = 'application/xml';
@@ -398,7 +425,11 @@ class RateLimiter {
     this.store = new Map();
   }
 
-  check(identifier: string, limit = RATE_LIMIT_MAX, window = RATE_LIMIT_WINDOW): boolean {
+  check(
+    identifier: string,
+    limit = RATE_LIMIT_MAX,
+    window = RATE_LIMIT_WINDOW
+  ): boolean {
     const now = Date.now();
     const record = this.store.get(identifier);
 
@@ -439,56 +470,85 @@ setInterval(() => rateLimiter.cleanup(), 5 * 60 * 1000);
 // ============================================================================
 
 const rateLimitMiddleware = async (c: any, next: any) => {
-  const identifier = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
-  
+  const identifier =
+    c.req.header('cf-connecting-ip') ||
+    c.req.header('x-forwarded-for') ||
+    'unknown';
+
   if (!rateLimiter.check(identifier)) {
-    return c.json({
-      success: false,
-      error: 'Rate limit exceeded',
-      message: `Maximum ${RATE_LIMIT_MAX} requests per minute allowed`,
-      retryAfter: 60,
-    }, 429);
+    return c.json(
+      {
+        success: false,
+        error: 'Rate limit exceeded',
+        message: `Maximum ${RATE_LIMIT_MAX} requests per minute allowed`,
+        retryAfter: 60,
+      },
+      429
+    );
   }
-  
+
   await next();
 };
 
 const queryValidator = validator('query', (value, c) => {
   const { locale, count, seed, format } = value;
-  
+
   if (locale && !getSupportedLocales().includes(locale as SupportedLocale)) {
-    return c.json({ 
-      success: false,
-      error: 'Invalid locale',
-      message: `Locale must be one of: ${getSupportedLocales().join(', ')}`,
-    }, 400);
+    return c.json(
+      {
+        success: false,
+        error: 'Invalid locale',
+        message: `Locale must be one of: ${getSupportedLocales().join(', ')}`,
+      },
+      400
+    );
   }
-  
-  if (count && (isNaN(Number(count)) || Number(count) < 1 || Number(count) > MAX_BATCH_SIZE)) {
-    return c.json({ 
-      success: false,
-      error: 'Invalid count',
-      message: `Count must be between 1 and ${MAX_BATCH_SIZE}`,
-    }, 400);
+
+  if (
+    count &&
+    (isNaN(Number(count)) ||
+      Number(count) < 1 ||
+      Number(count) > MAX_BATCH_SIZE)
+  ) {
+    return c.json(
+      {
+        success: false,
+        error: 'Invalid count',
+        message: `Count must be between 1 and ${MAX_BATCH_SIZE}`,
+      },
+      400
+    );
   }
-  
+
   if (seed && isNaN(Number(seed))) {
-    return c.json({ 
-      success: false,
-      error: 'Invalid seed',
-      message: 'Seed must be a valid number',
-    }, 400);
+    return c.json(
+      {
+        success: false,
+        error: 'Invalid seed',
+        message: 'Seed must be a valid number',
+      },
+      400
+    );
   }
-  
-  const validFormats: OutputFormat[] = ['json', 'xml', 'csv', 'yaml', 'plain'];
+
+  const validFormats: OutputFormat[] = [
+    'json',
+    'xml',
+    'csv',
+    'yaml',
+    'plain',
+  ];
   if (format && !validFormats.includes(format as OutputFormat)) {
-    return c.json({ 
-      success: false,
-      error: 'Invalid format',
-      message: `Format must be one of: ${validFormats.join(', ')}`,
-    }, 400);
+    return c.json(
+      {
+        success: false,
+        error: 'Invalid format',
+        message: `Format must be one of: ${validFormats.join(', ')}`,
+      },
+      400
+    );
   }
-  
+
   return {
     locale: locale as SupportedLocale | undefined,
     count: count ? Number(count) : undefined,
@@ -504,12 +564,15 @@ const queryValidator = validator('query', (value, c) => {
 const app = new Hono();
 
 // Apply middleware
-app.use('*', cors({
-  origin: '*',
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  maxAge: 86400,
-}));
+app.use(
+  '*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400,
+  })
+);
 app.use('*', logger());
 app.use('*', secureHeaders());
 app.use('*', etag());
@@ -523,11 +586,12 @@ app.use('*', prettyJSON());
 // Root - API Documentation
 app.get('/', (c) => {
   const baseUrl = new URL(c.req.url).origin;
-  
+
   return c.json({
     name: 'Address Generator API',
     version: API_VERSION,
-    description: 'Comprehensive random address generator with multi-language support',
+    description:
+      'Comprehensive random address generator with multi-language support',
     documentation: `${baseUrl}/docs`,
     endpoints: {
       system: {
@@ -589,7 +653,8 @@ app.get('/health', (c) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: API_VERSION,
-    uptime: process.uptime?.() || 'N/A',
+    // In Workers, process.uptime might not exist, so keep it defensive:
+    uptime: (globalThis as any).process?.uptime?.() || 'N/A',
   });
 });
 
@@ -624,7 +689,7 @@ app.get('/address', queryValidator, (c) => {
   const { locale, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
   const address = {
     id: fakerInstance.string.uuid(),
     streetAddress: fakerInstance.location.streetAddress(),
@@ -634,7 +699,7 @@ app.get('/address', queryValidator, (c) => {
     country: fakerInstance.location.country(),
     countryCode: fakerInstance.location.countryCode(),
   };
-  
+
   const response: ApiResponse<typeof address> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -642,10 +707,10 @@ app.get('/address', queryValidator, (c) => {
     data: address,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -654,7 +719,7 @@ app.get('/addresses', queryValidator, (c) => {
   const { locale, count = 10, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
   const addresses = Array.from({ length: count }, () => ({
     id: fakerInstance.string.uuid(),
     streetAddress: fakerInstance.location.streetAddress(),
@@ -664,7 +729,7 @@ app.get('/addresses', queryValidator, (c) => {
     country: fakerInstance.location.country(),
     countryCode: fakerInstance.location.countryCode(),
   }));
-  
+
   const response: ApiResponse<typeof addresses> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -673,10 +738,10 @@ app.get('/addresses', queryValidator, (c) => {
     data: addresses,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -685,9 +750,9 @@ app.get('/address/full', queryValidator, (c) => {
   const { locale, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
   const address = generateFullAddress(fakerInstance);
-  
+
   const response: ApiResponse<typeof address> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -695,10 +760,10 @@ app.get('/address/full', queryValidator, (c) => {
     data: address,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -707,9 +772,11 @@ app.get('/addresses/full', queryValidator, (c) => {
   const { locale, count = 10, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
-  const addresses = Array.from({ length: count }, () => generateFullAddress(fakerInstance));
-  
+
+  const addresses = Array.from({ length: count }, () =>
+    generateFullAddress(fakerInstance)
+  );
+
   const response: ApiResponse<typeof addresses> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -718,10 +785,10 @@ app.get('/addresses/full', queryValidator, (c) => {
     data: addresses,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -730,9 +797,9 @@ app.get('/person', queryValidator, (c) => {
   const { locale, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
   const person = generatePersonWithAddress(fakerInstance);
-  
+
   const response: ApiResponse<typeof person> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -740,10 +807,10 @@ app.get('/person', queryValidator, (c) => {
     data: person,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -752,9 +819,11 @@ app.get('/persons', queryValidator, (c) => {
   const { locale, count = 10, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
-  const persons = Array.from({ length: count }, () => generatePersonWithAddress(fakerInstance));
-  
+
+  const persons = Array.from({ length: count }, () =>
+    generatePersonWithAddress(fakerInstance)
+  );
+
   const response: ApiResponse<typeof persons> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -763,10 +832,10 @@ app.get('/persons', queryValidator, (c) => {
     data: persons,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -775,7 +844,7 @@ app.get('/address/street', queryValidator, (c) => {
   const { locale, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
   const street = {
     id: fakerInstance.string.uuid(),
     street: fakerInstance.location.street(),
@@ -784,7 +853,7 @@ app.get('/address/street', queryValidator, (c) => {
     secondaryAddress: fakerInstance.location.secondaryAddress(),
     buildingNumber: fakerInstance.location.buildingNumber(),
   };
-  
+
   const response: ApiResponse<typeof street> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -792,10 +861,10 @@ app.get('/address/street', queryValidator, (c) => {
     data: street,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -804,19 +873,21 @@ app.get('/address/city', queryValidator, (c) => {
   const { locale, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
+  const locationAny = fakerInstance.location as any;
+
   const city = {
     id: fakerInstance.string.uuid(),
     city: fakerInstance.location.city(),
-    cityPrefix: fakerInstance.location.cityPrefix?.() || '',
-    citySuffix: fakerInstance.location.citySuffix?.() || '',
+    cityPrefix: locationAny.cityPrefix?.() ?? '',
+    citySuffix: locationAny.citySuffix?.() ?? '',
     state: fakerInstance.location.state(),
     stateAbbr: fakerInstance.location.state({ abbreviated: true }),
     county: fakerInstance.location.county?.() || '',
     zipCode: fakerInstance.location.zipCode(),
     timeZone: fakerInstance.location.timeZone(),
   };
-  
+
   const response: ApiResponse<typeof city> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -824,10 +895,10 @@ app.get('/address/city', queryValidator, (c) => {
     data: city,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -836,11 +907,13 @@ app.get('/address/coordinates', queryValidator, (c) => {
   const { locale, seed, count = 1, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
   const generateCoordinate = () => {
-    const lat = parseFloat(fakerInstance.location.latitude());
-    const lng = parseFloat(fakerInstance.location.longitude());
-    
+    const rawLat = fakerInstance.location.latitude();
+    const rawLng = fakerInstance.location.longitude();
+    const lat = parseFloat(rawLat);
+    const lng = parseFloat(rawLng);
+
     return {
       id: fakerInstance.string.uuid(),
       latitude: lat,
@@ -848,12 +921,17 @@ app.get('/address/coordinates', queryValidator, (c) => {
       cardinalDirection: fakerInstance.location.cardinalDirection(),
       ordinalDirection: fakerInstance.location.ordinalDirection(),
       direction: fakerInstance.location.direction(),
-      nearbyCoordinate: fakerInstance.location.nearbyGPSCoordinate({ origin: [lat, lng] }),
+      nearbyCoordinate: fakerInstance.location.nearbyGPSCoordinate({
+        origin: [rawLat, rawLng],
+      }) as [number, number],
     };
   };
-  
-  const coordinates = count === 1 ? generateCoordinate() : Array.from({ length: count }, generateCoordinate);
-  
+
+  const coordinates =
+    count === 1
+      ? generateCoordinate()
+      : Array.from({ length: count }, generateCoordinate);
+
   const response: ApiResponse<typeof coordinates> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -862,10 +940,10 @@ app.get('/address/coordinates', queryValidator, (c) => {
     data: coordinates,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
@@ -874,13 +952,13 @@ app.get('/address/country', queryValidator, (c) => {
   const { locale, seed, format } = c.req.valid('query');
   const fakerInstance = getFakerInstance(locale);
   setSeed(fakerInstance, seed);
-  
+
   const country = {
     id: fakerInstance.string.uuid(),
     country: fakerInstance.location.country(),
     countryCode: fakerInstance.location.countryCode(),
   };
-  
+
   const response: ApiResponse<typeof country> = {
     success: true,
     timestamp: new Date().toISOString(),
@@ -888,48 +966,54 @@ app.get('/address/country', queryValidator, (c) => {
     data: country,
     meta: { seed, format, version: API_VERSION },
   };
-  
+
   const contentType = { type: 'application/json' };
   const formatted = formatResponse(response, format, contentType);
-  
+
   return c.text(formatted, 200, { 'Content-Type': contentType.type });
 });
 
 // 404 Handler
 app.notFound((c) => {
-  return c.json({
-    success: false,
-    error: 'Not Found',
-    message: 'The requested endpoint does not exist',
-    timestamp: new Date().toISOString(),
-    availableEndpoints: [
-      '/',
-      '/health',
-      '/locales',
-      '/stats',
-      '/address',
-      '/addresses',
-      '/address/full',
-      '/addresses/full',
-      '/person',
-      '/persons',
-      '/address/street',
-      '/address/city',
-      '/address/coordinates',
-      '/address/country',
-    ],
-  }, 404);
+  return c.json(
+    {
+      success: false,
+      error: 'Not Found',
+      message: 'The requested endpoint does not exist',
+      timestamp: new Date().toISOString(),
+      availableEndpoints: [
+        '/',
+        '/health',
+        '/locales',
+        '/stats',
+        '/address',
+        '/addresses',
+        '/address/full',
+        '/addresses/full',
+        '/person',
+        '/persons',
+        '/address/street',
+        '/address/city',
+        '/address/coordinates',
+        '/address/country',
+      ],
+    },
+    404
+  );
 });
 
 // Error Handler
 app.onError((err, c) => {
   console.error(`Error: ${err.message}`);
-  return c.json({
-    success: false,
-    error: 'Internal Server Error',
-    message: err.message,
-    timestamp: new Date().toISOString(),
-  }, 500);
+  return c.json(
+    {
+      success: false,
+      error: 'Internal Server Error',
+      message: err.message,
+      timestamp: new Date().toISOString(),
+    },
+    500
+  );
 });
 
 export default app;
