@@ -30,8 +30,8 @@ interface FullAddress {
   zipCodeByState: string;
   country: string;
   countryCode: string;
-  latitude: string;
-  longitude: string;
+  latitude: number;
+  longitude: number;
   timeZone: string;
   buildingNumber: string;
   cardinalDirection: string;
@@ -150,10 +150,8 @@ const setSeed = (fakerInstance: Faker, seed?: number) => {
 };
 
 const generateFullAddress = (fakerInstance: Faker): FullAddress => {
-  const rawLat = fakerInstance.location.latitude();
-  const rawLng = fakerInstance.location.longitude();
-  const lat = parseFloat(rawLat);
-  const lng = parseFloat(rawLng);
+  const lat = Number(fakerInstance.location.latitude());
+  const lng = Number(fakerInstance.location.longitude());
   const state = fakerInstance.location.state();
   const locationAny = fakerInstance.location as any;
 
@@ -164,7 +162,6 @@ const generateFullAddress = (fakerInstance: Faker): FullAddress => {
     streetAddress: fakerInstance.location.streetAddress(),
     secondaryAddress: fakerInstance.location.secondaryAddress(),
     city: fakerInstance.location.city(),
-    // Some faker builds don't expose these in the type definition:
     cityPrefix: locationAny.cityPrefix?.() ?? '',
     citySuffix: locationAny.citySuffix?.() ?? '',
     state: state,
@@ -173,9 +170,8 @@ const generateFullAddress = (fakerInstance: Faker): FullAddress => {
     zipCodeByState: fakerInstance.location.zipCode(),
     country: fakerInstance.location.country(),
     countryCode: fakerInstance.location.countryCode(),
-    // keep as strings, as defined in FullAddress
-    latitude: rawLat,
-    longitude: rawLng,
+    latitude: lat,
+    longitude: lng,
     timeZone: fakerInstance.location.timeZone(),
     buildingNumber: fakerInstance.location.buildingNumber(),
     cardinalDirection: fakerInstance.location.cardinalDirection(),
@@ -183,8 +179,7 @@ const generateFullAddress = (fakerInstance: Faker): FullAddress => {
     direction: fakerInstance.location.direction(),
     county: fakerInstance.location.county?.() || '',
     nearbyGPSCoordinate: fakerInstance.location.nearbyGPSCoordinate({
-      // typings usually expect [string, string]
-      origin: [rawLat, rawLng],
+      origin: [lat, lng] as any,
     }) as [number, number],
     coordinates: { lat, lng },
   };
@@ -226,7 +221,6 @@ const generatePersonWithAddress = (fakerInstance: Faker): PersonWithAddress => {
       bs: fakerInstance.company.buzzPhrase(),
     },
     internet: {
-      // Correct faker API is userName, not username
       username: fakerInstance.internet.userName({ firstName, lastName }),
       email: fakerInstance.internet.email({ firstName, lastName }),
       password: fakerInstance.internet.password(),
@@ -259,7 +253,8 @@ const generatePersonWithAddress = (fakerInstance: Faker): PersonWithAddress => {
       bitcoinAddress: fakerInstance.finance.bitcoinAddress(),
       ethereumAddress: fakerInstance.finance.ethereumAddress(),
       amount: fakerInstance.finance.amount(),
-      transactionDescription: fakerInstance.finance.transactionDescription(),
+      transactionDescription:
+        fakerInstance.finance.transactionDescription(),
     },
   };
 };
@@ -653,7 +648,6 @@ app.get('/health', (c) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: API_VERSION,
-    // In Workers, process.uptime might not exist, so keep it defensive:
     uptime: (globalThis as any).process?.uptime?.() || 'N/A',
   });
 });
@@ -909,10 +903,8 @@ app.get('/address/coordinates', queryValidator, (c) => {
   setSeed(fakerInstance, seed);
 
   const generateCoordinate = () => {
-    const rawLat = fakerInstance.location.latitude();
-    const rawLng = fakerInstance.location.longitude();
-    const lat = parseFloat(rawLat);
-    const lng = parseFloat(rawLng);
+    const lat = Number(fakerInstance.location.latitude());
+    const lng = Number(fakerInstance.location.longitude());
 
     return {
       id: fakerInstance.string.uuid(),
@@ -922,7 +914,7 @@ app.get('/address/coordinates', queryValidator, (c) => {
       ordinalDirection: fakerInstance.location.ordinalDirection(),
       direction: fakerInstance.location.direction(),
       nearbyCoordinate: fakerInstance.location.nearbyGPSCoordinate({
-        origin: [rawLat, rawLng],
+        origin: [lat, lng] as any,
       }) as [number, number],
     };
   };
